@@ -1,0 +1,74 @@
+{
+  "name": "@pexafy/ai-sdk",
+  "version": "0.1.0",
+  "description": "AI SDK tools for Pexafy: semantic search over 9M+ free stock photos from Unsplash, Pexels, Pixabay and more",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run test/unit.test.ts",
+    "test:live": "tsx examples/agent.ts",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "ai",
+    "ai-sdk",
+    "vercel",
+    "tools",
+    "agents",
+    "stock photos",
+    "image search",
+    "semantic search",
+    "unsplash",
+    "pexels",
+    "pixabay"
+  ],
+  "author": "Marouane Tijani <marouane@pexafy.com>",
+  "license": "MIT",
+  "homepage": "https://docs.pexafy.com/ai-sdk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pexafy/pexafy-ai-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Pexafy/pexafy-ai-sdk/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "peerDependencies": {
+    "ai": "^5.0.0 || ^6.0.0 || ^7.0.0",
+    "zod": "^3.25.76 || ^4.1.8"
+  },
+  "devDependencies": {
+    "@ai-sdk/anthropic": "^4.0.72",
+    "@types/node": "^26.6.4",
+    "ai": "^7.0.128",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.15",
+    "typescript": "5.9",
+    "vitest": "^4.1.11",
+    "zod": "^4.6.5"
+  }
+}
