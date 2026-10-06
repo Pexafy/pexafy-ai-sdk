@@ -15,8 +15,13 @@ Set `PEXAFY_API_KEY`. Free key, no card: [pexafy.com/dashboard/api-keys/create](
 
 ## Use
 
+```bash
+npm install @ai-sdk/anthropic  # for this example; any AI SDK provider works
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
 ```ts
-import { anthropic } from "@ai-sdk/anthropic"; // any AI SDK provider works
+import { anthropic } from "@ai-sdk/anthropic";
 import { generateText, isStepCount } from "ai";
 import { pexafyTools } from "pexafy-ai-sdk";
 
