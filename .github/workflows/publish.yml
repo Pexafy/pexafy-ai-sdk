@@ -1,0 +1,28 @@
+# Publishes to npm when a GitHub release is published, with npm trusted publishing
+# (OIDC, no token; provenance is attached automatically). One-time setup on
+# npmjs.com > pexafy-ai-sdk > Settings > Trusted Publisher: GitHub Actions,
+# organization "Pexafy", repository "pexafy-ai-sdk", workflow "publish.yml".
+name: publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest
+      - run: npm ci
+      - name: Tag matches package.json
+        run: test "${GITHUB_REF_NAME#v}" = "$(node -p 'require("./package.json").version')"
+      - run: npm publish --access public
