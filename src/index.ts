@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { tool, type Tool } from "ai";
 import { z } from "zod";
 
 export const VERSION = "0.1.0";
@@ -6,20 +6,27 @@ export const VERSION = "0.1.0";
 const DEFAULT_BASE_URL = "https://api.pexafy.com";
 const QUERY_MAX_LENGTH = 250;
 const MAX_RESULTS = 20;
-const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 
 export type PexafyToolOptions = {
-  /** Pexafy API key. Falls back to the `PEXAFY_API_KEY` environment variable. */
+  /** Pexafy API key. Defaults to the `PEXAFY_API_KEY` environment variable. */
   apiKey?: string;
-  /** How many photos a search returns when the model does not ask for a number. Default 6. */
+  /** Photos per search when the model gives no `count`. Default 6, max 20. */
   maxResults?: number;
+  /** Per-request timeout in milliseconds. Default 30000. */
+  timeoutMs?: number;
+  /** Retries on a per-minute rate limit, a 5xx or a network failure. Default 2. */
+  maxRetries?: number;
   /** API origin. Default `https://api.pexafy.com`. */
   baseUrl?: string;
-  /** Retries on 429 and 5xx, honouring `Retry-After`. Default 2. */
-  maxRetries?: number;
   /** A custom fetch, for tests or proxies. */
   fetch?: typeof globalThis.fetch;
 };
+
+export type Orientation = "landscape" | "portrait" | "square";
+
+export type SearchPhotosInput = { query: string; orientation?: Orientation[]; count?: number };
+export type FindSimilarPhotosInput = { photo_id: string; count?: number };
+export type GetPhotoInput = { photo_id: string };
 
 /** What the model reads of one photo. */
 export type PexafyPhoto = {
@@ -38,6 +45,8 @@ export type PexafyPhoto = {
   license: string;
   credit: string;
 };
+
+export type PexafyPhotos = { photos: PexafyPhoto[] };
 
 export class PexafyError extends Error {
   constructor(
@@ -119,7 +128,7 @@ function resolveKey(options: PexafyToolOptions): string {
   if (!key) {
     throw new PexafyError(
       "No Pexafy API key. Pass { apiKey } or set PEXAFY_API_KEY. " +
-        "Keys are created at https://pexafy.com/dashboard/api-keys/ (free plan, no card).",
+        "Get a free key at https://pexafy.com/dashboard/api-keys/create/",
     );
   }
   return key;
@@ -127,12 +136,32 @@ function resolveKey(options: PexafyToolOptions): string {
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => {
+    if (signal?.aborted) return reject(signal.reason);
+    const onAbort = () => {
       clearTimeout(timer);
-      reject(signal.reason);
-    });
+      reject(signal!.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
+
+/** How long to wait before retrying this response, or null when retrying cannot help. */
+function retryDelay(response: Response, body: any, attempt: number): number | null {
+  const header = response.headers.get("retry-after");
+  const retryAfter = header === null ? Number.NaN : Number(header);
+  const hinted = Number.isFinite(retryAfter) && retryAfter >= 0 && retryAfter <= 60;
+  const delay = hinted ? retryAfter * 1000 : Math.min(2 ** attempt, 30) * 1000;
+  if (response.status >= 500) return delay;
+  if (response.status !== 429) return null;
+  // A spent daily or monthly quota (DAILY_QUOTA_EXCEEDED, QUOTA_EXCEEDED) does not clear
+  // in a minute: only the per-minute rate limit is worth waiting for.
+  const code = body?.error?.code;
+  if (code ? code !== "RATE_LIMITED" : header !== null && !hinted) return null;
+  return delay;
+}
 
 async function request(
   options: PexafyToolOptions,
@@ -140,7 +169,7 @@ async function request(
   params: Record<string, string | number | string[] | undefined>,
   signal?: AbortSignal,
 ): Promise<any> {
-  const url = new URL(`${(options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "")}/api/v1${path}`);
+  const url = new URL(`${(options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "")}/api/v1${path}`);
   for (const [name, value] of Object.entries(params)) {
     if (value === undefined) continue;
     for (const v of Array.isArray(value) ? value : [value]) url.searchParams.append(name, String(v));
@@ -152,42 +181,65 @@ async function request(
     "user-agent": `pexafy-ai-sdk/${VERSION}`,
   };
   const maxRetries = options.maxRetries ?? 2;
+  const timeoutMs = options.timeoutMs ?? 30_000;
 
   for (let attempt = 0; ; attempt++) {
-    const response = await doFetch(url, { headers, signal });
-    if (RETRY_STATUS.has(response.status) && attempt < maxRetries) {
-      const retryAfter = Number(response.headers.get("retry-after"));
-      const delay = Number.isFinite(retryAfter) && retryAfter > 0
-        ? Math.min(retryAfter, 60) * 1000
-        : Math.min(2 ** attempt, 30) * 1000;
+    const controller = new AbortController();
+    const onAbort = () => controller.abort(signal!.reason);
+    if (signal?.aborted) throw signal.reason;
+    signal?.addEventListener("abort", onAbort, { once: true });
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    let response: Response;
+    let body: any;
+    try {
+      response = await doFetch(url, { headers, signal: controller.signal });
+      body = await response.json().catch(() => undefined);
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      const message = controller.signal.aborted
+        ? `Pexafy did not answer within ${timeoutMs} ms`
+        : `Could not reach Pexafy: ${error instanceof Error ? error.message : String(error)}`;
+      if (attempt < maxRetries) {
+        await sleep(Math.min(2 ** attempt, 30) * 1000, signal);
+        continue;
+      }
+      throw new PexafyError(message);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    }
+
+    if (response.ok && body?.success !== false && body && "data" in body) return body;
+
+    const delay = response.ok ? null : retryDelay(response, body, attempt);
+    if (delay !== null && attempt < maxRetries) {
       await sleep(delay, signal);
       continue;
     }
-    let body: any = {};
-    try {
-      body = await response.json();
-    } catch {
-      // Not JSON: the status line below says enough.
+    if (response.ok) {
+      throw new PexafyError(`Unexpected response from Pexafy (HTTP ${response.status}, no data)`);
     }
-    if (response.ok && body.success !== false) return body;
-    const err = body.error ?? {};
-    const message = err.message ?? body.detail ?? response.statusText ?? "request failed";
+    const err = body?.error ?? {};
+    const detail = err.message ?? body?.detail ?? response.statusText ?? "request failed";
     const prefix =
       response.status === 429
         ? "Pexafy rate limit or quota reached"
         : response.status === 404
           ? "No such Pexafy photo"
-          : "Pexafy request failed";
+          : response.status === 401 || response.status === 403
+            ? "Pexafy rejected the API key"
+            : "Pexafy request failed";
     throw new PexafyError(
-      `${prefix}: ${typeof message === "string" ? message : JSON.stringify(message)} (HTTP ${response.status})`,
+      `${prefix}: ${typeof detail === "string" ? detail : JSON.stringify(detail)} (HTTP ${response.status})`,
       response.status,
       err.code,
     );
   }
 }
 
-function photos(body: any) {
-  const list: ApiPhoto[] = body.data ?? [];
+function photos(body: any): PexafyPhotos {
+  const list: ApiPhoto[] = Array.isArray(body.data) ? body.data : [];
   return { photos: list.map((p, i) => summarize(p, i + 1)) };
 }
 
@@ -207,22 +259,10 @@ const count = z
   .optional()
   .describe(`How many photos to return, 1 to ${MAX_RESULTS}.`);
 
-/**
- * Search free-to-use stock photos by describing the scene.
- *
- * ```ts
- * import { generateText, stepCountIs } from "ai";
- * import { searchPhotos } from "@pexafy/ai-sdk";
- *
- * const { text } = await generateText({
- *   model: "anthropic/claude-haiku-4.5",
- *   tools: { searchPhotos: searchPhotos() },
- *   stopWhen: stepCountIs(3),
- *   prompt: "Find a header photo for a post about remote work.",
- * });
- * ```
- */
-export const searchPhotos = (options: PexafyToolOptions = {}) =>
+/** Search free-to-use stock photos by describing the scene. */
+export const searchPhotos = (
+  options: PexafyToolOptions = {},
+): Tool<SearchPhotosInput, PexafyPhotos> =>
   tool({
     description:
       "Find real, free-to-use stock photographs (Unsplash, Pexels, Pixabay and other libraries) " +
@@ -265,7 +305,9 @@ export const searchPhotos = (options: PexafyToolOptions = {}) =>
   });
 
 /** Find photos that look like one returned by an earlier search. */
-export const findSimilarPhotos = (options: PexafyToolOptions = {}) =>
+export const findSimilarPhotos = (
+  options: PexafyToolOptions = {},
+): Tool<FindSimilarPhotosInput, PexafyPhotos> =>
   tool({
     description:
       "Find stock photographs that look like a photo returned by an earlier Pexafy search: same " +
@@ -284,7 +326,7 @@ export const findSimilarPhotos = (options: PexafyToolOptions = {}) =>
   });
 
 /** One photo's details and credit line, by photo_id. */
-export const getPhoto = (options: PexafyToolOptions = {}) =>
+export const getPhoto = (options: PexafyToolOptions = {}): Tool<GetPhotoInput, PexafyPhoto> =>
   tool({
     description:
       "Get the details of one Pexafy photo by its photo_id: image URL, size, alt text, licence " +

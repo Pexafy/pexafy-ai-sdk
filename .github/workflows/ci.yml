@@ -10,7 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: [20, 22, 24]
+        include:
+          - { node: 20, ai: 5 }
+          - { node: 22, ai: 6 }
+          - { node: 22, ai: 7 }
+          - { node: 24, ai: 7 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,6 +22,9 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      - run: npx tsc --noEmit
+      - if: matrix.ai != 7
+        run: npm install --no-save ai@${{ matrix.ai }}
+      - if: matrix.ai == 7
+        run: npx tsc --noEmit
       - run: npm test
       - run: npm run build

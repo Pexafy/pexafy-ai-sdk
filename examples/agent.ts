@@ -1,6 +1,6 @@
 // An agent that illustrates a blog post outline with real, credited photos.
 //
-//   npm install @pexafy/ai-sdk ai zod @ai-sdk/anthropic
+//   npm install pexafy-ai-sdk ai zod @ai-sdk/anthropic
 //   PEXAFY_API_KEY=... ANTHROPIC_API_KEY=... npx tsx examples/agent.ts
 import { anthropic } from "@ai-sdk/anthropic";
 import { generateText, isStepCount } from "ai";
