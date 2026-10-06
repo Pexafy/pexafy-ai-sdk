@@ -22,19 +22,17 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ```ts
 import { anthropic } from "@ai-sdk/anthropic";
-import { generateText, isStepCount } from "ai";
+import { generateText, stepCountIs } from "ai";
 import { pexafyTools } from "pexafy-ai-sdk";
 
 const { text } = await generateText({
   model: anthropic("claude-haiku-4-5"),
   tools: pexafyTools(),
-  stopWhen: isStepCount(5),
+  stopWhen: stepCountIs(5),
   prompt: "Find a header photo for a post about remote work, with its credit line.",
 });
 console.log(text);
 ```
-
-On AI SDK 5 and 6, import `stepCountIs` instead of `isStepCount`.
 
 ## Tools
 
