@@ -1,6 +1,6 @@
 {
   "name": "pexafy-ai-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Vercel AI SDK tools for Pexafy: semantic search over 9M+ free stock photos from Unsplash, Pexels, Pixabay and more",
   "type": "module",
   "main": "./dist/index.cjs",
