@@ -25,4 +25,13 @@ jobs:
       - run: npm ci
       - name: Tag matches package.json
         run: test "${GITHUB_REF_NAME#v}" = "$(node -p 'require("./package.json").version')"
-      - run: npm publish --access public
+      - name: Skip a version that is already on npm
+        id: check
+        run: |
+          v=$(node -p 'require("./package.json").version')
+          if npm view "pexafy-ai-sdk@$v" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "pexafy-ai-sdk@$v is already on npm, nothing to publish"
+          fi
+      - if: steps.check.outputs.published != 'true'
+        run: npm publish --access public
