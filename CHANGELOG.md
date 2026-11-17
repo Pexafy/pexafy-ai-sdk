@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2 — 2026-11-17
+
+The product is now named Pexafy Stock Photos: the package description and the README
+say so, without figures that change over time. No code change.
+
 ## 0.1.1 — 2026-10-07
 
 Same code as 0.1.0. First version published from GitHub Actions with npm trusted

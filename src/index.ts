@@ -1,7 +1,7 @@
 import { tool, type Tool } from "ai";
 import { z } from "zod";
 
-export const VERSION = "0.1.1";
+export const VERSION = "0.1.2";
 
 const DEFAULT_BASE_URL = "https://api.pexafy.com";
 const QUERY_MAX_LENGTH = 250;

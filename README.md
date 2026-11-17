@@ -1,8 +1,8 @@
 # pexafy-ai-sdk
 
-[AI SDK](https://ai-sdk.dev) tools for [Pexafy](https://pexafy.com): semantic search over
-9M+ free stock photos (Unsplash, Pexels, Pixabay and six more sources). Each photo comes
-back with its URL, alt text, licence and credit line.
+[AI SDK](https://ai-sdk.dev) tools for [Pexafy Stock Photos](https://pexafy.com): semantic
+search over millions of free-to-use photos (Unsplash, Pexels, Pixabay and more). Each photo
+comes back with its URL, alt text, licence and credit line.
 
 ## Install
 
